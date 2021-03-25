@@ -1,0 +1,131 @@
+#include <Arduino.h>
+#include <SPI.h>
+#include <SD.h>
+#include <Wire.h>
+#include <Adafruit_BMP280.h>
+#include <RtcDS3231.h>
+#include <LiquidCrystal_I2C.h>
+#include <ACS712.h>
+#include <Adafruit_ADS1015.h>
+
+#define ACS712_30A_SENSITIVITY 0.066
+
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+Adafruit_ADS1115 ads1115;
+
+RtcDateTime dt;
+RtcDS3231<TwoWire> Rtc(Wire);
+char dateString[16];
+char timeString[16];
+
+char dtString[25];
+
+uint32_t previousMillis = 0;
+uint32_t previousMillis2 = 0;
+uint32_t currentMillis = 0;
+uint8_t countLCD = 0;
+
+uint32_t currentRawTotal = 0;
+uint32_t count = 0;
+float current = 0.0;
+uint32_t currentRaw = 0;
+float calibrationVal = 0.0;
+float currentReal = 0.0;
+
+Adafruit_BMP280 bmp;
+float temperature = 0.0;
+float pressure = 0.0;
+
+float voltReal = 0.0;
+float voltRaw = 0.0;
+
+const float multiplier23 = 0.1875F;
+const float multiplier16 = 0.0078125F;
+
+File logFile;
+
+void setup() {
+  // put your setup code here, to run once:
+  lcd.init();
+  lcd.clear();
+  lcd.backlight();
+  lcd.setCursor(5,1);
+  lcd.print("YAKINJAYA");
+  lcd.setCursor(4,3);
+  lcd.print("Data Logger");
+
+  Rtc.Begin();
+  RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
+
+  if(!Rtc.GetIsRunning()) Rtc.SetIsRunning(true);
+
+  RtcDateTime now = Rtc.GetDateTime();
+  if(now < compiled) Rtc.SetDateTime(compiled);
+
+  if(!SD.begin(5)){
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("SDCard gagal!");
+    while(1);
+  }
+
+  if(!bmp.begin(0x76)){
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("BMP280 gagal!");
+    while(1);
+  }
+  //ads1115.setGain(GAIN_ONE);
+  //ads1115.setGain(GAIN_SIXTEEN);
+  ads1115.begin();
+
+  for(int i = 0; i < 10; i++){
+    currentRawTotal += ads1115.readADC_SingleEnded(0);
+  }
+  calibrationVal = (float)(currentRawTotal * multiplier23) / 10;
+
+  delay(1000);
+
+  lcd.clear();
+  lcd.setCursor(8, 2);
+  lcd.print("Mulai");
+  lcd.setCursor(0, 3);
+  lcd.print(String("Cal: ") + String(calibrationVal));
+  delay(2000);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  temperature = bmp.readTemperature();
+  pressure = bmp.readPressure() / 100;
+
+  currentRawTotal += ads1115.readADC_SingleEnded(0)  - (uint16_t)calibrationVal;
+  count++;
+  
+  currentMillis = millis();
+  if(currentMillis - previousMillis >= 1000){
+    previousMillis = currentMillis;
+
+    sprintf(dtString, "%02u/%02u/%04u  %02u:%02u:%02u", dt.Day(), dt.Month(), dt.Year(), dt.Hour(), dt.Minute(), dt.Second());
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(dtString);
+
+    lcd.setCursor(0, 1);
+    lcd.print(String("T: ") + String(temperature) + "C " + String("P: ") + String(pressure));
+    
+    lcd.setCursor(0, 2);
+    lcd.print(String("I: ") + String(99.99) + String("A") + String(" V: ") + String(99.99) + String("V"));
+
+    lcd.setCursor(0, 3);
+    currentReal = ((((float)currentRawTotal * multiplier23) / count)) * ACS712_30A_SENSITIVITY;
+    lcd.print(String(currentReal));
+
+    currentRawTotal = 0;
+    count = 0;
+
+  }
+  
+  dt = Rtc.GetDateTime();
+
+}
