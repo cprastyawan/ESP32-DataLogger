@@ -132,8 +132,27 @@ void UpdateToServer(){
     String payload = http.getString();
     Serial.println(payload);
   } else {
-    Serial.print("Error code: ");
-    Serial.println(httpResponseCode);
+      Serial.print("failed, rc=");
+      Serial.print(mqttClient.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(100);
+    }
+  }
+}
+
+void mqttSubsCallback(char* topic, byte *payload, unsigned int length){
+  Serial.println("-------new message from broker-----");
+  Serial.print("channel:");
+  Serial.println(topic);
+  Serial.print("data:");  
+  Serial.write(payload, length);
+  Serial.println();
+}
+
+void mqttPublish(char* myTopic, char *JSONmessageBuffer){
+  if(!mqttClient.connected()){
+    mqttReconnect();
   }
   http.end();
 }
